@@ -1,0 +1,1 @@
+import{u as e,j as r,T as o,a as t}from"./index-C7r0trfs.js";import{C as s}from"./Container-BljOgeUa.js";function i(){return e(),r.jsxs(s,{children:[r.jsx(o,{children:"Error"}),r.jsx(t,{children:"Something went wrong."})]})}export{i as default};
