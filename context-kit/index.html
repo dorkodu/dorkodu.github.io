@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Context Kit — Tame Claude's Context Window</title>
+  <meta name="description"
+    content="A lightweight system for managing Claude's context window in large Cowork folders. Three components, one protocol, zero wasted tokens." />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet" />
+
+  <!-- Tabler Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css" />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            bg: '#09090B',
+            surface: '#18181B',
+            surfaceHover: '#1F1F23',
+            border: 'rgba(255, 255, 255, 0.08)',
+            borderActive: 'rgba(255, 255, 255, 0.15)',
+            accent: '#D97757',
+            accentDim: 'rgba(217, 119, 87, 0.15)',
+            primary: '#10B981',
+          },
+          backgroundImage: {
+            'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+            'hero-glow': 'conic-gradient(from 180deg at 50% 50%, #2a8af6 0deg, #a853ba 180deg, #e92a67 360deg)',
+          },
+          animation: {
+            'blob': 'blob 10s infinite',
+            'fade-in': 'fadeIn 0.8s ease-out forwards',
+            'slide-up': 'slideUp 0.8s ease-out forwards',
+          },
+          keyframes: {
+            blob: {
+              '0%': { transform: 'translate(0px, 0px) scale(1)' },
+              '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+              '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+              '100%': { transform: 'translate(0px, 0px) scale(1)' },
+            },
+            fadeIn: {
+              '0%': { opacity: '0' },
+              '100%': { opacity: '1' },
+            },
+            slideUp: {
+              '0%': { opacity: '0', transform: 'translateY(20px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Twemoji Styles -->
+  <style>
+    img.emoji {
+      height: 1.2em;
+      width: 1.2em;
+      margin: 0 .05em 0 .1em;
+      vertical-align: -0.1em;
+      display: inline-block;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #09090B;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #3f3f46;
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #52525b;
+    }
+
+    /* Background mesh */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(circle at 15% 50%, rgba(217, 119, 87, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 30%, rgba(217, 119, 87, 0.06) 0%, transparent 40%);
+      pointer-events: none;
+    }
+
+    .glass {
+      background: rgba(24, 24, 27, 0.6);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+    }
+
+    .glass-card {
+      background: rgba(24, 24, 27, 0.4);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      transition: all 0.3s ease;
+    }
+
+    .glass-card:hover {
+      background: rgba(24, 24, 27, 0.6);
+      border-color: var(--borderActive);
+      transform: translateY(-2px);
+    }
+
+    /* Gradient Text */
+    .text-gradient {
+      background: linear-gradient(135deg, #f49e81 20%, #d34e21 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+  </style>
+</head>
+
+<body class="bg-bg text-gray-100 font-sans antialiased overflow-x-hidden selection:bg-primary/30 selection:text-white">
+
+  <!-- Background decorative elements -->
+  <div class="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+    <div
+      class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-orange-500/10 blur-[120px] mix-blend-screen animate-blob">
+    </div>
+    <div
+      class="absolute top-[20%] right-[-10%] w-[30%] h-[30%] rounded-full bg-emerald-600/10 blur-[100px] mix-blend-screen animate-blob"
+      style="animation-delay: 2s;"></div>
+    <div
+      class="absolute bottom-[-20%] left-[20%] w-[50%] h-[50%] rounded-full bg-orange-900/20 blur-[150px] mix-blend-screen animate-blob"
+      style="animation-delay: 4s;"></div>
+  </div>
+
+  <!-- Navbar -->
+  <nav class="fixed top-0 w-full z-50 glass border-b border-border">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="#" class="flex items-center gap-3 group">
+        <div
+          class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform">
+          <i class="ti ti-box-model text-white text-lg"></i>
+        </div>
+        <span class="font-bold text-lg tracking-tight text-white group-hover:text-accent transition-colors">Context
+          Kit</span>
+      </a>
+      <div class="hidden md:flex items-center gap-6">
+        <a href="#problem" class="text-sm font-medium text-gray-400 hover:text-white transition-colors">The Problem</a>
+        <a href="#components"
+          class="text-sm font-medium text-gray-400 hover:text-white transition-colors">Components</a>
+        <a href="#tiers" class="text-sm font-medium text-gray-400 hover:text-white transition-colors">Tier Model</a>
+        <a href="#faq" class="text-sm font-medium text-gray-400 hover:text-white transition-colors">FAQ</a>
+      </div>
+      <a href="https://github.com/dorukeray/context-kit" target="_blank"
+        class="flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-white/5 hover:bg-white/10 hover:border-borderActive text-sm font-semibold transition-all">
+        <i class="ti ti-brand-github text-xl"></i>
+        <span>GitHub</span>
+      </a>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="pt-32 pb-20">
+
+    <!-- Hero Section -->
+    <section class="max-w-5xl mx-auto px-6 text-center animate-slide-up">
+      <div
+        class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-accent/10 border-2 border-accent/20 text-accent text-xs font-mono font-semibold mb-8">
+        <i class="ti ti-sparkles"></i>
+        <span>Zero wasted tokens</span>
+      </div>
+      <h1 class="text-5xl md:text-7xl font-extrabold tracking-tight mb-8 leading-tight">
+        Tame <span class="text-gradient">Claude</span>'s<br>Context Window.
+      </h1>
+      <p class="text-lg md:text-xl text-gray-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+        A lightweight system for managing Claude's context window in large Cowork folders. Three components, one
+        protocol, zero wasted tokens.
+      </p>
+
+      <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-20">
+        <a href="#components"
+          class="flex items-center gap-2 px-8 py-3.5 rounded-full bg-primary hover:bg-emerald-600 text-white font-semibold text-sm transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)] hover:-translate-y-0.5">
+          <i class="ti ti-rocket text-xl"></i>
+          EXPLORE THE KIT
+        </a>
+        <a href="#problem"
+          class="flex items-center gap-2 px-8 py-3.5 rounded-full border border-border bg-surface hover:bg-surfaceHover text-white font-semibold text-sm transition-all hover:border-borderActive">
+          <i class="ti ti-book-2"></i>
+          Read the Explainer
+        </a>
+      </div>
+    </section>
+
+    <!-- The Problem Section -->
+    <section id="problem" class="max-w-6xl mx-auto px-6 py-20 border-t-2 border-border/10">
+      <div class="mb-16 text-center max-w-3xl mx-auto">
+        <h2 class="text-xs font-mono font-bold text-accent uppercase tracking-[0.2em] mb-4">The Problem</h2>
+        <h3 class="text-3xl md:text-4xl font-bold mb-6">Too many files, too little context 🤯</h3>
+        <p class="text-gray-400 text-lg leading-relaxed">
+          When you point Claude at a folder with dozens or hundreds of files, it tries to read
+          <strong>everything</strong>.
+          It burns through its context window on files that aren't relevant to the current task, then runs out of room
+          for the actual work. Output quality drops. Sessions stall.
+        </p>
+      </div>
+
+      <!-- Visual Terminal Problem Simulation -->
+      <div class="max-w-4xl mx-auto rounded-2xl glass border border-border overflow-hidden shadow-2xl">
+        <div class="flex items-center gap-2 px-4 py-3 bg-black/40 border-b border-border">
+          <div class="w-3 h-3 rounded-full bg-red-500"></div>
+          <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+          <div class="w-3 h-3 rounded-full bg-green-500"></div>
+          <span class="ml-2 text-xs font-mono text-gray-500">claude-context-limit.log</span>
+        </div>
+        <div class="p-6 font-mono text-sm leading-relaxed text-gray-300">
+          <div class="flex gap-4">
+            <span class="text-primary opacity-80">></span>
+            <span>Loading workspace directory...</span>
+          </div>
+          <div class="flex gap-4 mt-2">
+            <span class="text-gray-600">...</span>
+            <span class="text-gray-400">Read 142 files</span>
+          </div>
+          <div class="flex gap-4 mt-2">
+            <span class="text-yellow-500">!</span>
+            <span class="text-yellow-400">Context window at 85% capacity</span>
+          </div>
+          <div class="flex gap-4 mt-2">
+            <span class="text-gray-600">...</span>
+            <span class="text-gray-400">Reading /archive/old_version_v1.html</span>
+          </div>
+          <div class="flex gap-4 mt-2">
+            <span class="text-gray-600">...</span>
+            <span class="text-gray-400">Reading /archive/draft_notes.txt</span>
+          </div>
+          <div class="flex gap-4 mt-2">
+            <span class="text-red-500">✖</span>
+            <span class="text-red-400 font-bold">Error: Context Limit Reached. Unable to process current task
+              instructions.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- The Fix / Components Section -->
+    <section id="components" class="max-w-6xl mx-auto px-6 py-20">
+      <div class="mb-16 text-center max-w-3xl mx-auto">
+        <h2 class="text-xs font-mono font-bold text-accent uppercase tracking-[0.2em] mb-4">The Solution</h2>
+        <h3 class="text-3xl md:text-4xl font-bold mb-6">Three components, one seamless workflow 🛠️</h3>
+        <p class="text-gray-400 text-lg leading-relaxed">
+          The Context Kit makes Claude read the <strong>right files</strong>, in the <strong>right order</strong>, and
+          ignore the rest. Here is the step-by-step walkthrough of what makes it tick.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        <!-- Component 1 -->
+        <div class="glass-card rounded-2xl p-8 relative overflow-hidden group">
+          <div
+            class="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+          </div>
+          <div
+            class="w-12 h-12 rounded-xl bg-primary/20 text-primary flex items-center justify-center text-xl mb-6 ring-1 ring-primary/30">
+            <i class="ti ti-settings-code"></i>
+          </div>
+          <h4 class="text-xl font-bold mb-3 flex justify-between items-center">
+            Global Instructions
+            <span class="text-xs font-mono text-gray-500 px-2 py-1 bg-white/5 rounded">1</span>
+          </h4>
+          <p class="text-gray-400 text-sm mb-6 leading-relaxed">
+            Rules pasted into Cowork global settings. They tell Claude to apply a tiered access model to every
+            folder—read canonical docs first, load domain files only when needed, and ignore archives.
+          </p>
+          <div class="mt-auto">
+            <div class="text-xs font-mono font-semibold text-accent/80 mb-2">Target File:</div>
+            <a href="global-instructions.md"
+              class="inline-flex items-center gap-2 text-xs font-mono bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-gray-300 hover:text-white hover:bg-white/10 transition-colors">
+              <i class="ti ti-file-code"></i>
+              global-instructions.md
+            </a>
+          </div>
+        </div>
+
+        <!-- Component 2 -->
+        <div class="glass-card rounded-2xl p-8 relative overflow-hidden group">
+          <div
+            class="absolute inset-0 bg-gradient-to-b from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+          </div>
+          <div
+            class="w-12 h-12 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-xl mb-6 ring-1 ring-blue-500/30">
+            <i class="ti ti-file-text"></i>
+          </div>
+          <h4 class="text-xl font-bold mb-3 flex justify-between items-center">
+            Folder Manifests
+            <span class="text-xs font-mono text-gray-500 px-2 py-1 bg-white/5 rounded">2</span>
+          </h4>
+          <p class="text-gray-400 text-sm mb-6 leading-relaxed">
+            A <code>_MANIFEST.md</code> file dropped into any working folder. It scopes the workspace, explaining what
+            is the source of truth, domains mapping, and what should be skipped.
+          </p>
+          <div class="mt-auto">
+            <div class="text-xs font-mono font-semibold text-blue-400/80 mb-2">Target File:</div>
+            <a href="manifest-template.md"
+              class="inline-flex items-center gap-2 text-xs font-mono bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-gray-300 hover:text-white hover:bg-white/10 transition-colors">
+              <i class="ti ti-file-code"></i>
+              manifest-template.md
+            </a>
+          </div>
+        </div>
+
+        <!-- Component 3 -->
+        <div class="glass-card rounded-2xl p-8 relative overflow-hidden group">
+          <div
+            class="absolute inset-0 bg-gradient-to-b from-orange-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+          </div>
+          <div
+            class="w-12 h-12 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center text-xl mb-6 ring-1 ring-orange-500/30">
+            <i class="ti ti-brain"></i>
+          </div>
+          <h4 class="text-xl font-bold mb-3 flex justify-between items-center">
+            Navigator Skill
+            <span class="text-xs font-mono text-gray-500 px-2 py-1 bg-white/5 rounded">3</span>
+          </h4>
+          <p class="text-gray-400 text-sm mb-6 leading-relaxed">
+            A powerful Cowork skill that enforces the orientation protocol. It forces Claude to read the manifest,
+            handle conflict resolution, and intelligently scope sub-agents context.
+          </p>
+          <div class="mt-auto">
+            <div class="text-xs font-mono font-semibold text-orange-400/80 mb-2">Target Folder:</div>
+            <div
+              class="inline-flex items-center gap-2 text-xs font-mono bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-gray-300">
+              <i class="ti ti-folder"></i>
+              tiered-context-navigator/
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- The Tier Model Section -->
+    <section id="tiers" class="max-w-6xl mx-auto px-6 py-20 border-t-2 border-border/10">
+      <div class="mb-16 text-center max-w-3xl mx-auto">
+        <h2 class="text-xs font-mono font-bold text-accent uppercase tracking-[0.2em] mb-4">Architecture</h2>
+        <h3 class="text-3xl md:text-4xl font-bold mb-6">The Tier Model 🏗️</h3>
+        <p class="text-gray-400 text-lg leading-relaxed">
+          Context Kit classifies every file into one of three tiers. Claude knows exactly where to look based on these
+          clear instructions.
+        </p>
+      </div>
+
+      <div class="flex flex-col gap-4 max-w-4xl mx-auto">
+        <!-- Tier 1 -->
+        <div class="flex flex-col md:flex-row glass-card rounded-xl overflow-hidden group">
+          <div class="md:w-64 p-6 bg-white/[0.02] border-r border-border/50 flex flex-col justify-center">
+            <span
+              class="inline-flex items-center self-start gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono font-bold mb-3">
+              <i class="ti ti-rosette-filled"></i> Tier 1
+            </span>
+            <h4 class="font-bold text-lg">Canonical</h4>
+          </div>
+          <div class="flex-1 p-6 grid md:grid-cols-2 gap-6 items-center">
+            <div>
+              <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">What it is</div>
+              <p class="text-gray-300 text-sm">Source-of-truth documents, manifests, master references.</p>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">When Claude reads it</div>
+              <p class="text-emerald-400 font-medium text-sm">Always, before any work.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tier 2 -->
+        <div class="flex flex-col md:flex-row glass-card rounded-xl overflow-hidden group">
+          <div class="md:w-64 p-6 bg-white/[0.02] border-r border-border/50 flex flex-col justify-center">
+            <span
+              class="inline-flex items-center self-start gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-mono font-bold mb-3">
+              <i class="ti ti-folder-filled"></i> Tier 2
+            </span>
+            <h4 class="font-bold text-lg">Domain-Relevant</h4>
+          </div>
+          <div class="flex-1 p-6 grid md:grid-cols-2 gap-6 items-center">
+            <div>
+              <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">What it is</div>
+              <p class="text-gray-300 text-sm">Working files in domain subfolders.</p>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">When Claude reads it</div>
+              <p class="text-blue-400 font-medium text-sm">Only when the task touches that domain.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tier 3 -->
+        <div class="flex flex-col md:flex-row glass-card rounded-xl overflow-hidden group">
+          <div class="md:w-64 p-6 bg-white/[0.02] border-r border-border/50 flex flex-col justify-center">
+            <span
+              class="inline-flex items-center self-start gap-1.5 px-3 py-1 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-mono font-bold mb-3">
+              <i class="ti ti-archive-filled"></i> Tier 3
+            </span>
+            <h4 class="font-bold text-lg">Archival</h4>
+          </div>
+          <div class="flex-1 p-6 grid md:grid-cols-2 gap-6 items-center">
+            <div>
+              <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">What it is</div>
+              <p class="text-gray-300 text-sm">Old versions, drafts, superseded files.</p>
+            </div>
+            <div>
+              <div class="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">When Claude reads it</div>
+              <p class="text-red-400 font-medium text-sm">Only when you explicitly ask.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Personalization / Setup Section -->
+    <section class="max-w-6xl mx-auto px-6 py-20 border-t-2 border-border/10">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
+        <div>
+          <h2 class="text-xs font-mono font-bold text-accent uppercase tracking-[0.2em] mb-4">Rollout & Personalize</h2>
+          <h3 class="text-3xl font-bold mb-6">Make it yours ✨</h3>
+          <p class="text-gray-400 text-lg mb-8 leading-relaxed">
+            You don't need to roll out everything at once. Gradually integrate Context Kit into your workflow. Customize
+            it with your own preferences to give Claude a deep understanding of your style.
+          </p>
+          <ul class="space-y-6">
+            <li class="flex gap-4">
+              <div
+                class="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
+                1</div>
+              <div>
+                <h4 class="font-bold text-white mb-2">Pave the global rules</h4>
+                <p class="text-gray-400 text-sm">Paste the `global-instructions.md` into Cowork settings. Fill
+                  placeholder sections with your coding style, document formats, and terminology.</p>
+              </div>
+            </li>
+            <li class="flex gap-4">
+              <div
+                class="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
+                2</div>
+              <div>
+                <h4 class="font-bold text-white mb-2">Manifest your busy folders</h4>
+                <p class="text-gray-400 text-sm">Add `_MANIFEST.md` to your most complex folders. If it improves output,
+                  start adding it everywhere.</p>
+              </div>
+            </li>
+            <li class="flex gap-4">
+              <div
+                class="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
+                3</div>
+              <div>
+                <h4 class="font-bold text-white mb-2">Level up with the Skill</h4>
+                <p class="text-gray-400 text-sm">Install the Navigator Skill into Cowork capabilities for strict
+                  enforcement of the tier model during multi-step execution.</p>
+              </div>
+            </li>
+          </ul>
+        </div>
+
+        <div class="rounded-2xl glass p-8 border border-border shadow-2xl relative">
+          <div class="absolute inset-0 bg-primary/5 rounded-2xl"></div>
+          <h4 class="font-mono text-sm font-bold flex items-center gap-2 mb-6 text-gray-300">
+            <i class="ti ti-file-code"></i>
+            global-instructions.md
+          </h4>
+          <pre class="text-xs font-mono text-gray-400 leading-relaxed overflow-x-auto"><code><span class="text-primary italic"># 1. Formatting Preferences</span>
+<span class="text-gray-500">- Use trailing commas in TS</span>
+<span class="text-gray-500">- Use single quotes globally</span>
+<span class="text-gray-500">- Prefer Tailwind utility classes</span>
+
+<span class="text-primary italic"># 2. Terminology</span>
+<span class="text-gray-500">- "Sub-agent" -> "Worker"</span>
+<span class="text-gray-500">- "Tier 1" -> "Source of Truth"</span>
+
+<span class="text-emerald-400 italic"># 3. Execution</span>
+<span class="text-gray-300">When initiating a task, ALWAYS read
+the _MANIFEST.md if it exists...</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section id="faq" class="max-w-4xl mx-auto px-6 py-20 border-t-2 border-border/10">
+      <div class="mb-16 text-center">
+        <h2 class="text-xs font-mono font-bold text-accent uppercase tracking-[0.2em] mb-4">Under the hood</h2>
+        <h3 class="text-3xl font-bold mb-6">Frequently Asked Questions ❓</h3>
+      </div>
+
+      <div class="space-y-6">
+        <!-- FAQ 1 -->
+        <div class="glass-card rounded-xl p-6">
+          <h4 class="text-lg font-bold mb-2 flex items-center justify-between">
+            Will Claude update manifests automatically?
+            <i class="ti ti-robot-off text-gray-500 text-xl"></i>
+          </h4>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            No. You retain complete editorial control. Claude relies on you to define what is canonical. Periodically
+            check that your Tier 1 lists are still accurate; stale references will degrade output quality.
+          </p>
+        </div>
+
+        <!-- FAQ 2 -->
+        <div class="glass-card rounded-xl p-6">
+          <h4 class="text-lg font-bold mb-2 flex items-center justify-between">
+            Do I need a manifest for every folder?
+            <i class="ti ti-folder-question text-gray-500 text-xl"></i>
+          </h4>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            Absolutely not. Manifests are only for folders where you perform regular Cowork tasks and there are enough
+            files (roughly 10+) that Claude needs guidance. Small folders do not need one.
+          </p>
+        </div>
+
+        <!-- FAQ 3 -->
+        <div class="glass-card rounded-xl p-6">
+          <h4 class="text-lg font-bold mb-2 flex items-center justify-between">
+            How do I handle obsolete files?
+            <i class="ti ti-archive text-gray-500 text-xl"></i>
+          </h4>
+          <p class="text-gray-400 text-sm leading-relaxed">
+            Keep them in the folder, but classify them or move them into a directory flagged as Tier 3 in your Manifest.
+            The Navigator Skill will actively skip those files unless specifically instructed to retrieve them.
+          </p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-border bg-surface mt-10">
+    <div class="max-w-6xl mx-auto px-6 py-12 flex flex-col md:flex-row justify-between items-center gap-6">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-emerald-400 flex items-center justify-center">
+          <i class="ti ti-box-model text-white text-lg"></i>
+        </div>
+        <span class="font-bold text-lg tracking-tight text-white">Context Kit</span>
+      </div>
+
+      <div class="text-sm text-gray-500 text-center md:text-left">
+        License: MIT — use it however you like. <br class="md:hidden" />
+        Zero wasted tokens. Zero bloated contexts.
+      </div>
+
+      <div class="flex gap-4">
+        <a href="https://github.com/dorukeray/context-kit"
+          class="w-10 h-10 rounded-full bg-white/5 border border-border flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-colors">
+          <i class="ti ti-brand-github text-xl"></i>
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Twemoji Parse Script -->
+  <script src="https://cdn.jsdelivr.net/npm/@twemoji/api@latest/dist/twemoji.min.js" crossorigin="anonymous"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      twemoji.parse(document.body, {
+        folder: 'svg',
+        ext: '.svg'
+      });
+    });
+  </script>
+</body>
+
+</html>
